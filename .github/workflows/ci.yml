@@ -78,6 +78,8 @@ jobs:
 
       - name: Setup Firestore Emulator
         uses: mickfeech/firestore-emulator-action@0.0.12
+        with:
+          fireStoreProjectID: 'dummy-project'
 
       - name: Run test
         run: npm test
