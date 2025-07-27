@@ -1,0 +1,60 @@
+{
+  "name": "@cassina/langgraphjs-checkpoint-firestore",
+  "version": "0.1.0",
+  "description": "LangGraph.js Checkpoint implementation for Firestore",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:cassina/langgraphjs-checkpoint-firestore.git"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:common": "tsc --project tsconfig-cls.json",
+    "check-types": "tsc --noEmit",
+    "emulator": "firebase emulators:start --only firestore",
+    "lint": "npx eslint ./src --max-warnings 0",
+    "test": "npm run test:unit && npm run test:int && npm run test:e2e",
+    "test:e2e": "firebase emulators:exec 'npm run build && jest -c jest.e2e.config.ts test/FirestoreSaver.e2e.test.ts'",
+    "test:int": "firebase emulators:exec 'jest test/FirestoreSaver.int.test.ts --runInBand'",
+    "test:unit": "jest test/FirestoreSaver.unit.test.ts --runInBand"
+  },
+  "keywords": [],
+  "author": "Bernardo Cassina",
+  "license": "MIT",
+  "dependencies": {
+    "firebase-admin": "^13.4.0"
+  },
+  "peerDependencies": {
+    "@langchain/core": "^0.3.66",
+    "@langchain/langgraph": "^0.3.11",
+    "@langchain/langgraph-checkpoint": "^0.0.18"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.32.0",
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "@langchain/openai": "^0.6.3",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.1.0",
+    "dotenv": "^16.0.3",
+    "eslint": "^9.32.0",
+    "firebase-tools": "^14.11.1",
+    "jest": "^30.0.5",
+    "ts-jest": "^29.4.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.38.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}
