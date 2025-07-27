@@ -2,14 +2,15 @@
   "name": "@cassina/langgraphjs-checkpoint-firestore",
   "version": "0.1.0",
   "description": "LangGraph.js Checkpoint implementation for Firestore",
-  "main": "./index.js",
-  "types": "./index.d.ts",
   "type": "module",
+  "main": "dist/index.cjs.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.js"
     }
   },
   "repository": {
@@ -17,8 +18,7 @@
     "url": "git@github.com:cassina/langgraphjs-checkpoint-firestore.git"
   },
   "scripts": {
-    "build": "tsc",
-    "build:common": "tsc --project tsconfig-cls.json",
+    "build": "tsup",
     "check-types": "tsc --noEmit",
     "emulator": "firebase emulators:start --only firestore",
     "lint": "npx eslint ./src --max-warnings 0",
@@ -50,6 +50,7 @@
     "jest": "^30.0.5",
     "ts-jest": "^29.4.0",
     "ts-node": "^10.9.2",
+    "tsup": "^8.5.0",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0"
   },
