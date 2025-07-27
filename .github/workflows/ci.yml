@@ -76,19 +76,8 @@ jobs:
         with:
           cache-key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
 
-      # Ensure Java is installed (See https://github.com/actions/setup-java)
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      # Install the Firebase Emulator Suite
-      - name: Start Firebase Emulator Suite
-        uses: firebase-emulator-action@v1
-        with:
-          firebase-tools-version: '14.11.1'
-          emulators: 'firestore'
+      - name: Setup Firestore Emulator
+        uses: mickfeech/firestore-emulator-action@0.0.12
 
       - name: Run test
         run: npm test
