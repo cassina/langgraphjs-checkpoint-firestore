@@ -82,7 +82,10 @@ jobs:
           fireStoreProjectID: 'dummy-project'
 
       - name: Run test
+        env: # Set the secret as an input
+          super_secret: ${{ secrets.OPENAI_API_KEY }}
         run: npm test
+
 
   build:
     runs-on: ubuntu-latest
