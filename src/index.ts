@@ -9,7 +9,7 @@ import {
     CheckpointPendingWrite
 } from '@langchain/langgraph-checkpoint'
 import type { RunnableConfig } from '@langchain/core/runnables'
-import { Firestore, CollectionReference} from 'firebase-admin/firestore'
+import { Firestore, CollectionReference} from '@google-cloud/firestore'
 
 
 export type FirestoreSaverParams = {

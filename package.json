@@ -31,7 +31,7 @@
   "author": "Bernardo Cassina",
   "license": "MIT",
   "dependencies": {
-    "firebase-admin": "^13.4.0"
+    "@google-cloud/firestore": "^7.11.3"
   },
   "peerDependencies": {
     "@langchain/core": "^0.3.66",
@@ -48,6 +48,7 @@
     "@types/node": "^24.1.0",
     "dotenv": "^16.0.3",
     "eslint": "^9.32.0",
+    "firebase-admin": "^13.4.0",
     "firebase-tools": "^14.11.1",
     "husky": "^9.1.7",
     "jest": "^30.0.5",
