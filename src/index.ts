@@ -73,64 +73,77 @@ export class FirestoreSaver extends BaseCheckpointSaver {
         runnableConfig.configurable ?? {}
         if (!thread_id) return undefined
 
-        let q = this.checkpointCollection
+        let query = this.checkpointCollection
             .where('thread_id', '==', thread_id)
             .where('checkpoint_ns', '==', checkpoint_ns)
 
         if (checkpoint_id !== undefined) {
-            q = q.where('checkpoint_id', '==', checkpoint_id)
+            query = query.where('checkpoint_id', '==', checkpoint_id)
         }
 
-        const checkpointsSnap = await q.orderBy('checkpoint_id', 'desc').limit(1).get()
+        let checkpointsSnap
+        try {
+            checkpointsSnap = await query
+                .orderBy('checkpoint_id', 'desc')
+                .limit(1)
+                .get()
+        } catch (err) {
+            throw new Error('Failed to fetch checkpoint: ' + (err as Error).message)
+        }
         if (checkpointsSnap.empty) return undefined
 
-        const firstDoc = checkpointsSnap.docs[0].data()
+        const checkpointDocData = checkpointsSnap.docs[0].data()
         const config = {
             configurable: {
                 thread_id,
                 checkpoint_ns,
-                checkpoint_id: firstDoc.checkpoint_id,
+                checkpoint_id: checkpointDocData.checkpoint_id,
             }
         }
 
         // main checkpoint + metadata
         const checkpoint = await this.deserialize<Checkpoint>(
-            firstDoc.checkpoint as string,
-            firstDoc.type
+            checkpointDocData.checkpoint as string,
+            checkpointDocData.type
         )
         const metadata = await this.deserialize<CheckpointMetadata>(
-            firstDoc.metadata as string,
-            firstDoc.type
+            checkpointDocData.metadata as string,
+            checkpointDocData.type
         )
 
         // pending writes
-        const pendingWritesSnap = await this.checkpointWritesCollection
-            .where('thread_id', '==', thread_id)
-            .where('checkpoint_ns', '==', checkpoint_ns)
-            .where('checkpoint_id', '==', firstDoc.checkpoint_id)
-            .get()
+        let pendingWritesSnap
+        try {
+            pendingWritesSnap = await this.checkpointWritesCollection
+                .where('thread_id', '==', thread_id)
+                .where('checkpoint_ns', '==', checkpoint_ns)
+                .where('checkpoint_id', '==', checkpointDocData.checkpoint_id)
+                .get()
+        } catch (err) {
+            throw new Error('Failed to fetch pending writes: ' + (err as Error).message)
+        }
 
         const pendingWrites: CheckpointPendingWrite[] = await Promise.all(
-            pendingWritesSnap.docs.map(async (snap) => {
-                const w = snap.data()
-                const val = await this.deserialize(
-                    w.value as string,
-                    w.type as string
+            pendingWritesSnap.docs.map(async (writeSnap) => {
+                const writeData = writeSnap.data()
+                const deserializedValue = await this.deserialize(
+                    writeData.value as string,
+                    writeData.type as string
                 )
                 return [
-                    w.task_id,
-                    w.channel,
-                    val
+                    writeData.task_id,
+                    writeData.channel,
+                    deserializedValue
                 ] as CheckpointPendingWrite
             })
         )
 
-        const parentConfig = firstDoc.parent_checkpoint_id
+        const parentConfig = checkpointDocData.parent_checkpoint_id
             ? {
                 configurable: {
                     thread_id,
                     checkpoint_ns,
-                    checkpoint_id: firstDoc.parent_checkpoint_id,
+                    checkpoint_id: checkpointDocData.parent_checkpoint_id,
                 }
             }
             : undefined
@@ -150,58 +163,63 @@ export class FirestoreSaver extends BaseCheckpointSaver {
         options?: CheckpointListOptions
     ): AsyncGenerator<CheckpointTuple> {
         const { limit, before, filter } = options ?? {}
-        let q: FirebaseFirestore.Query = this.checkpointCollection
+        let query: FirebaseFirestore.Query = this.checkpointCollection
 
         if (config.configurable?.thread_id) {
-            q = q.where('thread_id', '==', config.configurable.thread_id)
+            query = query.where('thread_id', '==', config.configurable.thread_id)
         }
         if (config.configurable?.checkpoint_ns) {
-            q = q.where('checkpoint_ns', '==', config.configurable.checkpoint_ns)
+            query = query.where('checkpoint_ns', '==', config.configurable.checkpoint_ns)
         }
         if (filter) {
             for (const [k, v] of Object.entries(filter)) {
-                q = q.where(`metadata.${k}`, '==', v)
+                query = query.where(`metadata.${k}`, '==', v)
             }
         }
         if (before?.configurable?.checkpoint_id != null) {
-            q = q.where(
+            query = query.where(
                 'checkpoint_id',
                 '<',
                 before.configurable.checkpoint_id
             )
         }
 
-        q = q.orderBy('checkpoint_id', 'desc')
-        if (limit != null) q = q.limit(limit)
+        query = query.orderBy('checkpoint_id', 'desc')
+        if (limit != null) query = query.limit(limit)
 
-        const snap = await q.get()
+        let snap
+        try {
+            snap = await query.get()
+        } catch (err) {
+            throw new Error('Failed to list checkpoints: ' + (err as Error).message)
+        }
         for (const doc of snap.docs) {
-            const d = doc.data()
-            const cp = await this.deserialize<Checkpoint>(
-                d.checkpoint as string,
-                d.type
+            const docData = doc.data()
+            const checkpoint = await this.deserialize<Checkpoint>(
+                docData.checkpoint as string,
+                docData.type
             )
-            const md = await this.deserialize<CheckpointMetadata>(
-                d.metadata as string,
-                d.type
+            const metadata = await this.deserialize<CheckpointMetadata>(
+                docData.metadata as string,
+                docData.type
             )
 
             yield {
                 config: {
                     configurable: {
-                        thread_id: d.thread_id as string,
-                        checkpoint_ns: d.checkpoint_ns as string,
-                        checkpoint_id: d.checkpoint_id as number
+                        thread_id: docData.thread_id as string,
+                        checkpoint_ns: docData.checkpoint_ns as string,
+                        checkpoint_id: docData.checkpoint_id as number
                     }
                 },
-                checkpoint: cp,
-                metadata: md,
-                parentConfig: d.parent_checkpoint_id
+                checkpoint,
+                metadata,
+                parentConfig: docData.parent_checkpoint_id
                     ? {
                         configurable: {
-                            thread_id: d.thread_id as string,
-                            checkpoint_ns: d.checkpoint_ns as string,
-                            checkpoint_id: d.parent_checkpoint_id as number
+                            thread_id: docData.thread_id as string,
+                            checkpoint_ns: docData.checkpoint_ns as string,
+                            checkpoint_id: docData.parent_checkpoint_id as number
                         }
                     }
                     : undefined
@@ -232,19 +250,19 @@ export class FirestoreSaver extends BaseCheckpointSaver {
 
         const docId = `${thread_id}_${checkpoint_ns}_${checkpoint_id}`
         const docData = {
-                thread_id,
-                checkpoint_ns,
-                checkpoint_id,
-                parent_checkpoint_id:
-                    config.configurable?.checkpoint_id ?? null,
-                type: typeTag,
-                checkpoint: cpPayload,
-                metadata: mdPayload
-        };
-        await this.checkpointCollection.doc(docId).set(
-            docData,
-            { merge: true}
-        );
+            thread_id,
+            checkpoint_ns,
+            checkpoint_id,
+            parent_checkpoint_id: config.configurable?.checkpoint_id ?? null,
+            type: typeTag,
+            checkpoint: cpPayload,
+            metadata: mdPayload
+        }
+        try {
+            await this.checkpointCollection.doc(docId).set(docData, { merge: true })
+        } catch (err) {
+            throw new Error('Failed to save checkpoint: ' + (err as Error).message)
+        }
 
         return {
             configurable: { thread_id, checkpoint_ns, checkpoint_id }
@@ -264,10 +282,14 @@ export class FirestoreSaver extends BaseCheckpointSaver {
             throw new Error('Config needs thread_id, checkpoint_ns & checkpoint_id')
         }
 
-        const ops = writes.map(([channel, value], idx) => {
+        const batch = this.firestore.batch()
+
+        writes.forEach(([channel, value], idx) => {
             const { typeTag, payload } = this.serialize(value)
             const docId = `${thread_id}_${checkpoint_ns}_${checkpoint_id}_${taskId}_${idx}`
-            return this.checkpointWritesCollection.doc(docId).set(
+            const ref = this.checkpointWritesCollection.doc(docId)
+            batch.set(
+                ref,
                 {
                     thread_id,
                     checkpoint_ns,
@@ -282,6 +304,10 @@ export class FirestoreSaver extends BaseCheckpointSaver {
             )
         })
 
-        await Promise.all(ops)
+        try {
+            await batch.commit()
+        } catch (err) {
+            throw new Error('Failed to save writes: ' + (err as Error).message)
+        }
     }
 }
