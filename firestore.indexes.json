@@ -1,4 +1,15 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "checkpoints",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "thread_id", "order": "ASCENDING"},
+        {"fieldPath": "checkpoint_ns", "order": "ASCENDING"},
+        {"fieldPath": "metadata.step", "order": "ASCENDING"},
+        {"fieldPath": "checkpoint_id", "order": "DESCENDING"}
+      ]
+    }
+  ],
   "fieldOverrides": []
 }
