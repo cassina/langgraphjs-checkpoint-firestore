@@ -1,5 +1,5 @@
-import type { Firestore, CollectionReference, DocumentData } from 'firebase-admin/firestore'
 import {RunnableConfig} from '@langchain/core/runnables';
+import type { Firestore, CollectionReference, DocumentData } from '@google-cloud/firestore'
 import {Checkpoint, CheckpointMetadata, PendingWrite, SerializerProtocol} from '@langchain/langgraph-checkpoint';
 
 // Import Subject
