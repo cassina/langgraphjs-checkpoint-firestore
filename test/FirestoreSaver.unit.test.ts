@@ -141,11 +141,13 @@ describe('FirestoreSaver.putWrites()', () => {
     let mockFirestore: jest.Mocked<Firestore>
     let mockWritesCollection: jest.Mocked<CollectionReference<DocumentData>>
     let mockDocRef: { set: jest.Mock }
+    let mockBatch: { set: jest.Mock; commit: jest.Mock }
     let mockSerde: jest.Mocked<SerializerProtocol>
     let saver: FirestoreSaver
 
     beforeEach(() => {
         mockDocRef = { set: jest.fn() }
+        mockBatch = { set: jest.fn(), commit: jest.fn() }
         mockWritesCollection = ({
             doc: jest.fn().mockReturnValue(mockDocRef),
         } as unknown) as jest.Mocked<CollectionReference<DocumentData>>
@@ -156,6 +158,7 @@ describe('FirestoreSaver.putWrites()', () => {
                 .mockReturnValueOnce({} as any)
                 // second call → writesCollection
                 .mockReturnValueOnce(mockWritesCollection),
+            batch: jest.fn().mockReturnValue(mockBatch),
         } as unknown) as jest.Mocked<Firestore>
 
         mockSerde = ({
@@ -183,11 +186,13 @@ describe('FirestoreSaver.putWrites()', () => {
 
         await saver.putWrites(cfg, writes, 'taskA')
 
+        expect(mockFirestore.batch).toHaveBeenCalledTimes(1)
         expect(mockWritesCollection.doc).toHaveBeenCalledTimes(2)
         expect(mockWritesCollection.doc).toHaveBeenNthCalledWith(1, 'T1_ns_cp1_taskA_0')
         expect(mockWritesCollection.doc).toHaveBeenNthCalledWith(2, 'T1_ns_cp1_taskA_1')
 
-        expect(mockDocRef.set).toHaveBeenCalledWith(
+        expect(mockBatch.set).toHaveBeenCalledWith(
+            mockDocRef,
             {
                 thread_id: 'T1',
                 checkpoint_ns: 'ns',
@@ -201,7 +206,8 @@ describe('FirestoreSaver.putWrites()', () => {
             { merge: true }
         )
 
-        expect(mockDocRef.set).toHaveBeenCalledWith(
+        expect(mockBatch.set).toHaveBeenCalledWith(
+            mockDocRef,
             {
                 thread_id: 'T1',
                 checkpoint_ns: 'ns',
@@ -214,6 +220,8 @@ describe('FirestoreSaver.putWrites()', () => {
             },
             { merge: true }
         )
+
+        expect(mockBatch.commit).toHaveBeenCalledTimes(1)
     })
 });
 

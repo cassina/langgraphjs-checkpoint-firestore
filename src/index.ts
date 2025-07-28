@@ -9,7 +9,7 @@ import {
     CheckpointPendingWrite
 } from '@langchain/langgraph-checkpoint'
 import type { RunnableConfig } from '@langchain/core/runnables'
-import { Firestore, CollectionReference} from '@google-cloud/firestore'
+import { Firestore, CollectionReference } from '@google-cloud/firestore'
 
 
 export type FirestoreSaverParams = {
@@ -27,6 +27,7 @@ export class FirestoreSaver extends BaseCheckpointSaver {
     protected checkpointWritesCollection: CollectionReference;
     checkpointCollectionName = 'checkpoints'
     checkpointWritesCollectionName = 'checkpoint_writes';
+    private static readonly LIST_PAGE_SIZE = 100;
 
     constructor(
         {
@@ -81,7 +82,15 @@ export class FirestoreSaver extends BaseCheckpointSaver {
             q = q.where('checkpoint_id', '==', checkpoint_id)
         }
 
-        const checkpointsSnap = await q.orderBy('checkpoint_id', 'desc').limit(1).get()
+        let checkpointsSnap
+        try {
+            checkpointsSnap = await q
+                .orderBy('checkpoint_id', 'desc')
+                .limit(1)
+                .get()
+        } catch (err) {
+            throw new Error(`Failed to fetch checkpoint: ${String(err)}`)
+        }
         if (checkpointsSnap.empty) return undefined
 
         const firstDoc = checkpointsSnap.docs[0].data()
@@ -104,11 +113,16 @@ export class FirestoreSaver extends BaseCheckpointSaver {
         )
 
         // pending writes
-        const pendingWritesSnap = await this.checkpointWritesCollection
-            .where('thread_id', '==', thread_id)
-            .where('checkpoint_ns', '==', checkpoint_ns)
-            .where('checkpoint_id', '==', firstDoc.checkpoint_id)
-            .get()
+        let pendingWritesSnap
+        try {
+            pendingWritesSnap = await this.checkpointWritesCollection
+                .where('thread_id', '==', thread_id)
+                .where('checkpoint_ns', '==', checkpoint_ns)
+                .where('checkpoint_id', '==', firstDoc.checkpoint_id)
+                .get()
+        } catch (err) {
+            throw new Error(`Failed to fetch pending writes: ${String(err)}`)
+        }
 
         const pendingWrites: CheckpointPendingWrite[] = await Promise.all(
             pendingWritesSnap.docs.map(async (snap) => {
@@ -172,40 +186,59 @@ export class FirestoreSaver extends BaseCheckpointSaver {
         }
 
         q = q.orderBy('checkpoint_id', 'desc')
-        if (limit != null) q = q.limit(limit)
 
-        const snap = await q.get()
-        for (const doc of snap.docs) {
-            const d = doc.data()
-            const cp = await this.deserialize<Checkpoint>(
-                d.checkpoint as string,
-                d.type
-            )
-            const md = await this.deserialize<CheckpointMetadata>(
-                d.metadata as string,
-                d.type
-            )
+        let remaining = limit ?? Infinity
+        let nextQuery = q
 
-            yield {
-                config: {
-                    configurable: {
-                        thread_id: d.thread_id as string,
-                        checkpoint_ns: d.checkpoint_ns as string,
-                        checkpoint_id: d.checkpoint_id as number
-                    }
-                },
-                checkpoint: cp,
-                metadata: md,
-                parentConfig: d.parent_checkpoint_id
-                    ? {
-                        configurable: {
-                            thread_id: d.thread_id as string,
-                            checkpoint_ns: d.checkpoint_ns as string,
-                            checkpoint_id: d.parent_checkpoint_id as number
-                        }
-                    }
-                    : undefined
+        while (remaining > 0) {
+            const pageSize = Math.min(FirestoreSaver.LIST_PAGE_SIZE, remaining)
+            let snap
+            try {
+                snap = await nextQuery.limit(pageSize).get()
+            } catch (err) {
+                throw new Error(`Failed to list checkpoints: ${String(err)}`)
             }
+
+            if (snap.empty) break
+
+            for (const doc of snap.docs) {
+                const docData = doc.data()
+                const checkpoint = await this.deserialize<Checkpoint>(
+                    docData.checkpoint as string,
+                    docData.type
+                )
+                const metadata = await this.deserialize<CheckpointMetadata>(
+                    docData.metadata as string,
+                    docData.type
+                )
+
+                yield {
+                    config: {
+                        configurable: {
+                            thread_id: docData.thread_id as string,
+                            checkpoint_ns: docData.checkpoint_ns as string,
+                            checkpoint_id: docData.checkpoint_id as number
+                        }
+                    },
+                    checkpoint,
+                    metadata,
+                    parentConfig: docData.parent_checkpoint_id
+                        ? {
+                            configurable: {
+                                thread_id: docData.thread_id as string,
+                                checkpoint_ns: docData.checkpoint_ns as string,
+                                checkpoint_id: docData.parent_checkpoint_id as number
+                            }
+                        }
+                        : undefined
+                }
+
+                remaining--
+                if (remaining === 0) return
+            }
+
+            if (snap.docs.length < pageSize) break
+            nextQuery = q.startAfter(snap.docs[snap.docs.length - 1])
         }
     }
 
@@ -241,10 +274,14 @@ export class FirestoreSaver extends BaseCheckpointSaver {
                 checkpoint: cpPayload,
                 metadata: mdPayload
         };
-        await this.checkpointCollection.doc(docId).set(
-            docData,
-            { merge: true}
-        );
+        try {
+            await this.checkpointCollection.doc(docId).set(
+                docData,
+                { merge: true }
+            )
+        } catch (err) {
+            throw new Error(`Failed to write checkpoint: ${String(err)}`)
+        }
 
         return {
             configurable: { thread_id, checkpoint_ns, checkpoint_id }
@@ -264,10 +301,13 @@ export class FirestoreSaver extends BaseCheckpointSaver {
             throw new Error('Config needs thread_id, checkpoint_ns & checkpoint_id')
         }
 
-        const ops = writes.map(([channel, value], idx) => {
+        const batch = this.firestore.batch()
+        writes.forEach(([channel, value], idx) => {
             const { typeTag, payload } = this.serialize(value)
             const docId = `${thread_id}_${checkpoint_ns}_${checkpoint_id}_${taskId}_${idx}`
-            return this.checkpointWritesCollection.doc(docId).set(
+            const ref = this.checkpointWritesCollection.doc(docId)
+            batch.set(
+                ref,
                 {
                     thread_id,
                     checkpoint_ns,
@@ -282,6 +322,12 @@ export class FirestoreSaver extends BaseCheckpointSaver {
             )
         })
 
-        await Promise.all(ops)
+        try {
+            if (writes.length > 0) {
+                await batch.commit()
+            }
+        } catch (err) {
+            throw new Error(`Failed to write checkpoint writes: ${String(err)}`)
+        }
     }
 }
