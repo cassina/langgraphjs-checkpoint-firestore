@@ -1,6 +1,69 @@
-| **Improvement Area**                   | **Recommendation & Action Items**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-|----------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Comprehensive README Documentation** | **Overhaul the README.md for clarity and completeness.** Include a project description, installation instructions (`npm install @cassina/firestore-checkpoint-ts`), and usage guide. Document the library’s purpose (e.g., “persisting and restoring LangGraphJS state using Firestore”), the main classes/functions, and how to configure them. Ensure the example integration (from above) is included or referenced. Add badges for npm version, build status, test coverage, and license (if applicable) to increase professionalism. A well-documented README instills confidence and helps developers get started quickly.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| **Add LICENSE.md file**                | **Add MIT Licence file                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| **Continuous Deployment (Release)**    | **Streamline publishing to npm with CI/CD.** In addition to CI for testing, set up a workflow for releasing the package to npm. This could be manually triggered or automated on tagging a new version. For instance, you can have GitHub Actions job that runs on a version tag push: it would build the library, then run `npm publish`. Make sure to use an npm token (stored as a secret) and that the `package.json` has the correct publish config (scope and access as mentioned). Alternatively, integrate a tool like **semantic-release** to handle version bumping and publishing automatically based on commit messages. A CI-based publish process reduces manual error and ensures the npm package is updated consistently alongside the repository.                                                                                                                                                                                                                                                                                                                                            |
-| **Code Quality and Maintainability**   | **Additional quality improvements.** Consider adding a few more polish items: <ul><li>**Prettier** for consistent code formatting (can be run pre-commit or in CI alongside ESLint).</li><li>**Husky + lint-staged** to run linting/tests on pre-commit or pre-push, preventing bad commits.</li><li>Review dependency versions: ensure that the Firestore SDK (e.g., Firebase Admin SDK or Firestore client) and any other deps are up-to-date and compatible with each other. Upgrade if needed to avoid using deprecated methods.</li><li>Check for any performance or security considerations (for example, ensure no sensitive info is hard-coded, and the Firestore usage follows best practices for batching or avoiding excessive reads).</li><li>Perform a final audit of the TypeScript types – make sure `.d.ts` files are generated or the types are exported in `package.json` (`"types": "dist/index.d.ts"` for example) so that consumers get proper IntelliSense.</li></ul> These steps further ensure the package is maintainable long-term and meets typical open-source quality standards. |
+# LangGraphJS Firestore Checkpoint
+
+[![npm version](https://img.shields.io/npm/v/@cassina/firestore-checkpoint-ts)](https://www.npmjs.com/package/@cassina/firestore-checkpoint-ts)
+[![CI](https://github.com/cassina/langgraphjs-checkpoint-firestore/actions/workflows/ci.yml/badge.svg)](https://github.com/cassina/langgraphjs-checkpoint-firestore/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE.md)
+
+## Introduction
+
+**LangGraphJS Firestore Checkpoint** is a Firestore backed checkpoint saver for [LangGraphJS](https://github.com/langchain-ai/langgraphjs). It allows you to persist and restore LangChain workflow state in Google Firestore, making it easy to resume executions or share state between processes.
+
+## Installation
+
+```bash
+npm install @cassina/firestore-checkpoint-ts
+```
+
+## Usage
+
+1. **Initialize Firebase Admin and Firestore**
+   ```typescript
+   import { initializeApp, cert } from 'firebase-admin/app';
+   import { getFirestore } from 'firebase-admin/firestore';
+   import { FirestoreSaver } from '@cassina/firestore-checkpoint-ts';
+
+   initializeApp({
+     credential: cert(serviceAccountJson),
+   });
+
+   const firestore = getFirestore();
+   const saver = new FirestoreSaver({ firestore });
+   ```
+
+2. **Save and retrieve a checkpoint**
+   ```typescript
+   const config = { configurable: { thread_id: 'my-thread' } };
+
+   // Save workflow state
+   await saver.put(config, checkpointData, metadata);
+
+   // Later restore
+   const tuple = await saver.getTuple(config);
+   if (tuple) {
+     console.log('Restored checkpoint', tuple.checkpoint);
+   }
+   ```
+
+`FirestoreSaver` uses two collections by default: `checkpoints` and `checkpoint_writes`. You can override them:
+
+```typescript
+const saver = new FirestoreSaver({
+  firestore,
+  checkpointCollectionName: 'my_checkpoints',
+  checkpointWritesCollectionName: 'my_writes',
+});
+```
+
+The saver can be plugged directly into a LangGraph/LangChain workflow or used on its own to persist state between runs.
+
+## API Overview
+
+- **constructor(params, serializer?)** – create a new saver with a Firestore instance and optional collection names.
+- **`put(config, checkpoint, metadata)`** – store a checkpoint and metadata. Returns a new runnable config pointing to the saved checkpoint.
+- **`getTuple(config)`** – fetch the latest checkpoint for a thread or namespace along with any pending writes.
+- **`list(config, options)`** – asynchronously iterate through checkpoints matching the given configuration.
+- **`putWrites(config, writes, taskId)`** – record intermediate writes for a task.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE.md](LICENSE.md) for the full text.
