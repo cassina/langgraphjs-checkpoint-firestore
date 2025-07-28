@@ -56,5 +56,5 @@ describe('React‑agent + Firestore checkpoint (E2E)', () => {
         // checkpoint exists
         const snapshot = await graph.getState(cfg);
         expect(snapshot).toBeDefined();
-    });
+    }, 15000);
 });
