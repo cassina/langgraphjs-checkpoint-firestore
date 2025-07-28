@@ -1,6 +1,6 @@
-import * as admin from 'firebase-admin'
+import * as admin from 'firebase-admin';
 import {getFirestore} from 'firebase-admin/firestore';
-import type { RunnableConfig } from '@langchain/core/runnables'
+import type { RunnableConfig } from '@langchain/core/runnables';
 import {CheckpointTuple} from '@langchain/langgraph-checkpoint';
 
 import {ensureFirestoreEmulator} from './utils/ensureEmulator';
@@ -13,13 +13,13 @@ import {
 } from './utils/int-mocks';
 
 // Import Subject
-import { FirestoreSaver } from '../src'
+import { FirestoreSaver } from '../src';
 
 /**
  *
  **/
 admin.initializeApp();
-let saver: FirestoreSaver
+let saver: FirestoreSaver;
 const db = getFirestore();
 /**
  *
@@ -31,7 +31,7 @@ beforeAll(async () => {
     saver = new FirestoreSaver({ firestore: db });
     const cols = await db.listCollections();
 
-    const batch = db.batch()
+    const batch = db.batch();
 
     for await (const col of cols) {
         const colSnap = await  col.get();
@@ -45,7 +45,7 @@ beforeAll(async () => {
 });
 
 test('put & getTuple round‑trip', async () => {
-    const undefined_config: RunnableConfig = { configurable: { thread_id: 'undefined' } }
+    const undefined_config: RunnableConfig = { configurable: { thread_id: 'undefined' } };
 
     const undefined_checkpoint = await saver.getTuple(undefined_config);
     expect(undefined_checkpoint).toBeUndefined();
@@ -121,7 +121,7 @@ test('put & getTuple round‑trip', async () => {
         },
         mockCheckpoint2,
         mockCheckpointMetadata,
-    )
+    );
 
     // Verify that parent is set and retrieved correctly
     const secondCheckpointTuple = await saver.getTuple({
