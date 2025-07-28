@@ -142,8 +142,14 @@ describe('FirestoreSaver.put()', () => {
         await expect(saver.put(cfg, mockCheckpoint, mockMetadata)).rejects.toThrow('Failed to save checkpoint: fail');
     });
 
-    it('should throw on mismatched checkpoint & metadata types', () => {
+    it('should throw on mismatched checkpoint & metadata types', async () => {
+        const cfg: RunnableConfig = { configurable: { thread_id: 'T1' } };
+        (mockSerde.dumpsTyped as jest.Mock).mockReset();
+        (mockSerde.dumpsTyped as jest.Mock)
+            .mockReturnValueOnce(['json', Uint8Array.from([1])])
+            .mockReturnValueOnce(['yaml', Uint8Array.from([2])]);
 
+        await expect(saver.put(cfg, mockCheckpoint, mockMetadata)).rejects.toThrow('Mismatched checkpoint & metadata types');
     });
 });
 
@@ -329,20 +335,45 @@ describe('FirestoreSaver.getTuple()', () => {
         });
     });
 
-    it('should call db.where when passed a checkpoint_id', () => {
-
+    it('should call db.where when passed a checkpoint_id', async () => {
+        await saver.getTuple({ configurable: { thread_id: mockThread, checkpoint_id: 7 } } as RunnableConfig);
+        expect(mockQuery.where).toHaveBeenCalledWith('checkpoint_id', '==', 7);
     });
 
-    it('should throw when query.get raises exceptions', () => {
-
+    it('should throw when query.get raises exceptions', async () => {
+        mockQuery.get.mockRejectedValueOnce(new Error('boom'));
+        await expect(saver.getTuple({ configurable: { thread_id: mockThread } } as RunnableConfig))
+            .rejects.toThrow('Failed to fetch checkpoint: boom');
     });
 
-    it('should throw error when fails to fetch pending writes', () => {
-
+    it('should throw error when fails to fetch pending writes', async () => {
+        mockWritesCollection.get.mockRejectedValueOnce(new Error('bad'));
+        await expect(saver.getTuple({ configurable: { thread_id: mockThread } } as RunnableConfig))
+            .rejects.toThrow('Failed to fetch pending writes: bad');
     });
 
-    it('should call deserialize when fetching pending writes', () => {
+    it('should call deserialize when fetching pending writes', async () => {
+        const val1 = Buffer.from(JSON.stringify('a')).toString('base64');
+        const val2 = Buffer.from(JSON.stringify('b')).toString('base64');
+        const writeDoc1 = { data: () => ({ task_id: 't1', channel: 'c1', type: 'json', value: val1 }) };
+        const writeDoc2 = { data: () => ({ task_id: 't2', channel: 'c2', type: 'json', value: val2 }) };
+        mockWritesSnapshot.docs = [writeDoc1, writeDoc2];
 
+        (mockSerde.loadsTyped as jest.Mock).mockReset();
+        (mockSerde.loadsTyped as jest.Mock)
+            .mockResolvedValueOnce(rawCheckpoint)
+            .mockResolvedValueOnce(rawMetadata)
+            .mockResolvedValueOnce('a')
+            .mockResolvedValueOnce('b');
+
+        const result = await saver.getTuple({ configurable: { thread_id: mockThread } } as RunnableConfig);
+
+        expect(mockSerde.loadsTyped).toHaveBeenNthCalledWith(3, 'json', JSON.stringify('a'));
+        expect(mockSerde.loadsTyped).toHaveBeenNthCalledWith(4, 'json', JSON.stringify('b'));
+        expect(result?.pendingWrites).toEqual([
+            ['t1', 'c1', 'a'],
+            ['t2', 'c2', 'b']
+        ]);
     });
 });
 
@@ -399,8 +430,10 @@ describe('FirestoreSaver.list()', () => {
         expect(tuples[0].parentConfig).toEqual({ configurable: { thread_id: 'T', checkpoint_ns: '', checkpoint_id: '1' } });
     });
 
-    it('should throw an error in failed to get query', () => {
-
+    it('should throw an error in failed to get query', async () => {
+        (mockCheckpointCollection.get as jest.Mock).mockRejectedValueOnce(new Error('oops'));
+        const iterator = saver.list({ configurable: { thread_id: 'T' } } as RunnableConfig);
+        await expect(iterator.next()).rejects.toThrow('Failed to list checkpoints: oops');
     });
 });
 
