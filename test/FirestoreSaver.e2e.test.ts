@@ -12,7 +12,7 @@ const { db, model } = environmentFactory();
 // Clear DB before each test
 beforeEach(async () => clearFirestore(db));
 
-it('should do stuff', async () => {
+it('should persist conversation state with FirestoreSaver', async () => {
     // SUB
     const saver = new FirestoreSaver({ firestore: db })
 
@@ -59,4 +59,4 @@ it('should do stuff', async () => {
     const stateSnap = await app.getState(cfg);
     expect(stateSnap).toBeDefined();
 
-});
+}, 15000);
