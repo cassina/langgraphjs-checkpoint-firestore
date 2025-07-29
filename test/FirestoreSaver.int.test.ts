@@ -1,5 +1,4 @@
 import * as admin from 'firebase-admin';
-import {getFirestore} from 'firebase-admin/firestore';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import {CheckpointTuple} from '@langchain/langgraph-checkpoint';
 
@@ -14,35 +13,18 @@ import {
 
 // Import Subject
 import { FirestoreSaver } from '../src';
+import {environmentFactory} from './utils/environmentFactory';
+import {clearFirestore} from './utils/clearFirestore';
 
-/**
- *
- **/
-admin.initializeApp();
-const db = getFirestore();
+const { db } = environmentFactory();
 let saver: FirestoreSaver;
-
-async function clearFirestore() {
-    const cols = await db.listCollections();
-    const batch = db.batch();
-    for await (const col of cols) {
-        const snap = await col.get();
-        for await (const doc of snap.docs) {
-            batch.delete(doc.ref);
-        }
-    }
-    await batch.commit();
-}
-/**
- *
- **/
 
 beforeAll(async () => {
     await ensureFirestoreEmulator();
 });
 
 beforeEach(async () => {
-    await clearFirestore();
+    await clearFirestore(db);
     saver = new FirestoreSaver({ firestore: db });
 });
 

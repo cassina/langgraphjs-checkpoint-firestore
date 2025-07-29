@@ -1,60 +1,62 @@
-import 'dotenv/config';                         // loads .env.test
-import { z } from 'zod';
-import * as admin from 'firebase-admin';
-import { tool } from '@langchain/core/tools';
-import { ChatOpenAI } from '@langchain/openai';
-import { createReactAgent } from '@langchain/langgraph/prebuilt';
+import {Annotation, START, StateGraph} from '@langchain/langgraph';
+import {BaseMessage, HumanMessage} from '@langchain/core/messages';
 
-import { FirestoreSaver } from '../src';
+import {environmentFactory} from './utils/environmentFactory';
 
-// ---------- dummy “weather” tool ----------
-const getWeather = tool(
-    async (input: { city: 'sf' | 'nyc' }) => {
-        return input.city === 'sf'
-            ? 'It’s always sunny in SF 😎'
-            : 'Could be cloudy in NYC ☁️';
-    },
-    {
-        name: 'get_weather',
-        description: 'Use this to get weather information.',
-        schema: z.object({ city: z.enum(['sf', 'nyc']) })
-    }
-);
+// Import Test Subject
+import {FirestoreSaver} from '../src';
+import {clearFirestore} from './utils/clearFirestore';
 
-// ---------- Firestore emulator + saver ----------
-admin.initializeApp({
-    credential: admin.credential.applicationDefault(),
-    projectId: process.env.FIREBASE_PROJECT_ID  // set in .env.test
-});
+const { db, model } = environmentFactory();
 
-const checkpointer = new FirestoreSaver({ firestore: admin.firestore() });
+// Clear DB before each test
+beforeEach(async () => clearFirestore(db));
 
-// ---------- build the graph ----------
-const graph = createReactAgent({
-    tools: [getWeather],
-    llm: new ChatOpenAI({ model: 'gpt-4o-mini' }), // stub or mock in CI if needed
-    checkpointSaver: checkpointer
-});
+it('should do stuff', async () => {
+    // SUB
+    const saver = new FirestoreSaver({ firestore: db })
 
-const cfg = { configurable: { thread_id: 'demo-thread' } };
-
-// ---------- the actual test ----------
-describe('React‑agent + Firestore checkpoint (E2E)', () => {
-    it('runs and stores state', async () => {
-        const res = await graph.invoke(
-            {
-                messages: [
-                    { role: 'user', content: 'what’s the weather in sf' }
-                ]
+    // Define a new graph
+    const StateAnnotation = Annotation.Root({
+        sentiment: Annotation<string>,
+        messages: Annotation<BaseMessage[]>({
+            reducer: (left: BaseMessage[], right: BaseMessage | BaseMessage[]) => {
+                if (Array.isArray(right)) {
+                    return left.concat(right);
+                }
+                return left.concat([right]);
             },
-            cfg
-        );
+            default: () => [],
+        }),
+    });
 
-        // sanity: LLM responded + tool executed
-        expect(JSON.stringify(res)).toContain('sunny');
+    async function callModel(state: typeof StateAnnotation.State) {
+        const response = await model.invoke(state.messages);
+        // We return an object, because this will get merged with the existing state
+        return { messages: [response] };
+    }
 
-        // checkpoint exists
-        const snapshot = await graph.getState(cfg);
-        expect(snapshot).toBeDefined();
-    }, 15000);
+    const workflow = new StateGraph(StateAnnotation)
+        .addNode("agent", callModel)
+        .addEdge(START, "agent");
+
+    const app = workflow.compile({
+        checkpointer: saver,
+    });
+
+    // Send messages
+    const cfg = { configurable: { thread_id: 'demo-thread' } };
+    let inputMessage = new HumanMessage("My name is Heisenberg.");
+    await app.invoke({ messages: [inputMessage]}, cfg);
+
+    inputMessage = new HumanMessage('What is my name?');
+    const response = await app.invoke({ messages: [inputMessage]}, cfg);
+
+    // Assert that the last message should remember the user's name
+    expect(response.messages.slice(-1)[0].content).toContain('Heisenberg');
+
+    // Assert that the state should be persisted
+    const stateSnap = await app.getState(cfg);
+    expect(stateSnap).toBeDefined();
+
 });
