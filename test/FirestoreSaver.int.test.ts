@@ -3,7 +3,7 @@ import {getFirestore} from 'firebase-admin/firestore';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import {CheckpointTuple} from '@langchain/langgraph-checkpoint';
 
-import {ensureFirestoreEmulator} from './utils/ensureEmulator';
+import { ensureFirestoreEmulator } from './utils/ensureEmulator';
 import {
     mockCheckpoint,
     mockCheckpoint2,
@@ -19,29 +19,31 @@ import { FirestoreSaver } from '../src';
  *
  **/
 admin.initializeApp();
-let saver: FirestoreSaver;
 const db = getFirestore();
+let saver: FirestoreSaver;
+
+async function clearFirestore() {
+    const cols = await db.listCollections();
+    const batch = db.batch();
+    for await (const col of cols) {
+        const snap = await col.get();
+        for await (const doc of snap.docs) {
+            batch.delete(doc.ref);
+        }
+    }
+    await batch.commit();
+}
 /**
  *
  **/
 
 beforeAll(async () => {
     await ensureFirestoreEmulator();
+});
 
+beforeEach(async () => {
+    await clearFirestore();
     saver = new FirestoreSaver({ firestore: db });
-    const cols = await db.listCollections();
-
-    const batch = db.batch();
-
-    for await (const col of cols) {
-        const colSnap = await  col.get();
-
-        for await (const docSnap of colSnap.docs) {
-            batch.delete(docSnap.ref);
-        }
-    }
-
-    await batch.commit();
 });
 
 test('put & getTuple round‑trip', async () => {
@@ -156,4 +158,103 @@ test('put & getTuple round‑trip', async () => {
     expect(checkpointTuples[0].checkpoint).toEqual(mockCheckpoint2);
 });
 
-test.skip('putWrites & pendingWrites show up', async () => null);
+test('write and retrieve pending writes', async () => {
+    await saver.put(
+        { configurable: { thread_id: mockThreadId } },
+        mockCheckpoint,
+        mockCheckpointMetadata
+    );
+
+    await saver.putWrites(
+        { configurable: { thread_id: mockThreadId, checkpoint_ns: '', checkpoint_id: mockCheckpointId } },
+        [['chan1', 1], ['chan2', { a: 'b' }]],
+        'task1'
+    );
+
+    const tuple = await saver.getTuple({ configurable: { thread_id: mockThreadId } });
+    expect(tuple?.pendingWrites).toEqual([
+        ['task1', 'chan1', 1],
+        ['task1', 'chan2', { a: 'b' }],
+    ]);
+});
+
+test('parent and child checkpoints link correctly', async () => {
+    await saver.put({ configurable: { thread_id: mockThreadId } }, mockCheckpoint, mockCheckpointMetadata);
+    await saver.put(
+        { configurable: { thread_id: mockThreadId, checkpoint_id: mockCheckpointId } },
+        mockCheckpoint2,
+        mockCheckpointMetadata
+    );
+
+    const latest = await saver.getTuple({ configurable: { thread_id: mockThreadId } });
+    expect(latest?.parentConfig).toEqual({
+        configurable: {
+            thread_id: mockThreadId,
+            checkpoint_ns: '',
+            checkpoint_id: mockCheckpointId,
+        }
+    });
+
+    const parent = await saver.getTuple({ configurable: { thread_id: mockThreadId, checkpoint_id: mockCheckpointId } });
+    expect(parent?.parentConfig).toBeUndefined();
+});
+
+test('overwrite checkpoint merges fields', async () => {
+    await saver.put({ configurable: { thread_id: mockThreadId } }, mockCheckpoint, mockCheckpointMetadata);
+    const docId = `${mockThreadId}__${mockCheckpointId}`;
+    await db.collection('checkpoints').doc(docId).set({ extra: 'keep' }, { merge: true });
+
+    const newMeta = { ...mockCheckpointMetadata, step: 99 };
+    await saver.put({ configurable: { thread_id: mockThreadId } }, mockCheckpoint, newMeta);
+
+    const snap = await db.collection('checkpoints').doc(docId).get();
+    expect(snap.data()?.extra).toBe('keep');
+
+    const tuple = await saver.getTuple({ configurable: { thread_id: mockThreadId } });
+    expect(tuple?.metadata?.step).toBe(99);
+});
+
+test('list returns checkpoints filtered by namespace', async () => {
+    const cpA = { ...mockCheckpoint, id: 'a' };
+    const cpB = { ...mockCheckpoint2, id: 'b' };
+    const cpC = { ...mockCheckpoint2, id: 'c' };
+
+    await saver.put({ configurable: { thread_id: mockThreadId, checkpoint_ns: 'ns1' } }, cpA, mockCheckpointMetadata);
+    await saver.put({ configurable: { thread_id: mockThreadId, checkpoint_ns: 'ns2' } }, cpB, mockCheckpointMetadata);
+    await saver.put({ configurable: { thread_id: 'other', checkpoint_ns: 'ns1' } }, cpC, mockCheckpointMetadata);
+
+    const all: CheckpointTuple[] = [];
+    for await (const t of saver.list({ configurable: { thread_id: mockThreadId } })) {
+        all.push(t);
+    }
+    expect(all).toHaveLength(2);
+
+    const ns1: CheckpointTuple[] = [];
+    for await (const t of saver.list({ configurable: { thread_id: mockThreadId, checkpoint_ns: 'ns1' } })) {
+        ns1.push(t);
+    }
+    expect(ns1).toHaveLength(1);
+    expect(ns1[0].config.configurable?.checkpoint_id).toBe('a');
+});
+
+test('throws when firestore client terminated', async () => {
+    const app2 = admin.initializeApp({}, 'tmp');
+    const badDb = app2.firestore();
+    const badSaver = new FirestoreSaver({ firestore: badDb });
+    await badDb.terminate();
+
+    await expect(
+        badSaver.put({ configurable: { thread_id: 't' } }, mockCheckpoint, mockCheckpointMetadata)
+    ).rejects.toThrow('Failed to save checkpoint');
+
+    await app2.delete();
+});
+
+test('throws on corrupted checkpoint data', async () => {
+    await saver.put({ configurable: { thread_id: mockThreadId } }, mockCheckpoint, mockCheckpointMetadata);
+    const docId = `${mockThreadId}__${mockCheckpointId}`;
+    await db.collection('checkpoints').doc(docId).update({ checkpoint: 'INVALID' });
+    await expect(
+        saver.getTuple({ configurable: { thread_id: mockThreadId } })
+    ).rejects.toThrow();
+});
