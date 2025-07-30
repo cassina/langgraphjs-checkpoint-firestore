@@ -240,3 +240,19 @@ test('throws on corrupted checkpoint data', async () => {
         saver.getTuple({ configurable: { thread_id: mockThreadId } })
     ).rejects.toThrow();
 });
+
+it('should throw when thread_id contains a slash', async () => {
+    const badConfig = { configurable: { thread_id: 'bad/thread', checkpoint_ns: '' } };
+
+    await expect(
+        saver.put(badConfig, mockCheckpoint, mockCheckpointMetadata)
+    ).rejects.toThrow(/(Value for argument \"documentPath\")/i); // regex matches various possible error messages
+});
+
+it('should throw when checkpoint_ns contains a slash', async () => {
+    const badConfig = { configurable: { thread_id: 'test_id', checkpoint_ns: 'bad/id' } };
+
+    await expect(
+        saver.put(badConfig, mockCheckpoint, mockCheckpointMetadata)
+    ).rejects.toThrow(/(Value for argument \"documentPath\")/i); // regex matches various possible error messages
+});

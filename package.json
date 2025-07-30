@@ -22,7 +22,8 @@
     "check-types": "tsc --noEmit",
     "emulator": "firebase emulators:start --only firestore",
     "lint": "npx eslint ./src --max-warnings 0",
-    "test": "npm run test:unit && npm run test:int && npm run test:e2e",
+    "test": "npm run test:build && npm run test:unit && npm run test:int && npm run test:e2e",
+    "test:build": "npm run build && jest test/build.test.ts --coverageThreshold '{}' && rm -rf dist",
     "test:e2e": "firebase emulators:exec 'npm run build && jest -c jest.e2e.config.ts test/FirestoreSaver.e2e.test.ts'",
     "test:int": "firebase emulators:exec 'jest test/FirestoreSaver.int.test.ts --runInBand'",
     "test:unit": "jest test/FirestoreSaver.unit.test.ts --runInBand"
