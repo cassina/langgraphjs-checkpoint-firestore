@@ -12,9 +12,31 @@ const { db, model } = environmentFactory();
 // Clear DB before each test
 // beforeEach(async () => clearFirestore(db));
 
+/**
+ * Fetch both the checkpoints and checkpoint_writes snapshots
+ * for a given threadId.
+ */
+async function getThreadDocs(threadId: string): Promise<{
+    cpSnap: FirebaseFirestore.QuerySnapshot;
+    writesSnap: FirebaseFirestore.QuerySnapshot;
+}> {
+    const cpSnap = await db
+        .collection('checkpoints')
+        .where('thread_id', '==', threadId)
+        .get();
+
+    const writesSnap = await db
+        .collection('checkpoint_writes')
+        .where('thread_id', '==', threadId)
+        .get();
+
+    return { cpSnap, writesSnap };
+}
+
 it('should persist conversation state with FirestoreSaver', async () => {
     // SUB
     const saver = new FirestoreSaver({ firestore: db })
+    const threadId = 'demo-thread';
 
     // Define a new graph
     const StateAnnotation = Annotation.Root({
@@ -45,7 +67,7 @@ it('should persist conversation state with FirestoreSaver', async () => {
     });
 
     // Send messages
-    const cfg = { configurable: { thread_id: 'demo-thread' } };
+    const cfg = { configurable: { thread_id: threadId } };
     let inputMessage = new HumanMessage("My name is Heisenberg.");
     await app.invoke({ messages: [inputMessage]}, cfg);
 
@@ -59,6 +81,17 @@ it('should persist conversation state with FirestoreSaver', async () => {
     const stateSnap = await app.getState(cfg);
     expect(stateSnap).toBeDefined();
 
-    // Assert that deletes all docs with that thread_id
+    // Before deletion, we should have at least one doc in each collection
+    const { cpSnap: beforeCp, writesSnap: beforeWrites } = await getThreadDocs(threadId);
+    expect(beforeCp.empty).toBe(false);
+    expect(beforeWrites.empty).toBe(false);
+
+    // Perform the deletion
+    await saver.deleteThread(threadId);
+
+    // After deletion, both collections must be empty for this thread
+    const { cpSnap: afterCp, writesSnap: afterWrites } = await getThreadDocs(threadId);
+    expect(afterCp.empty).toBe(true);
+    expect(afterWrites.empty).toBe(true);
 
 }, 15000);
