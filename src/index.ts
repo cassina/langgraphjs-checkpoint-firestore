@@ -51,8 +51,8 @@ export class FirestoreSaver extends BaseCheckpointSaver {
     }
 
     // PRIVATE: turns object → {typeTag, base64Payload}
-    private serialize(obj: unknown): { typeTag: string; payload: string } {
-        const [typeTag, rawBytes] = this.serde.dumpsTyped(obj);
+    private async serialize(obj: unknown): Promise<{ typeTag: string; payload: string }> {
+        const [typeTag, rawBytes] = await this.serde.dumpsTyped(obj);
         const payload = Buffer.from(rawBytes).toString('base64');
         return { typeTag, payload };
     }
@@ -62,7 +62,7 @@ export class FirestoreSaver extends BaseCheckpointSaver {
         const rawBytes = Buffer.from(payload, 'base64');
         // JSON serializer expects a string, so decode bytes → utf8 text
         const text = rawBytes.toString('utf-8');
-        return this.serde.loadsTyped(typeTag, text) as Promise<T>;
+        return await this.serde.loadsTyped(typeTag, text) as Promise<T>;
     }
 
     /** Fetch one checkpoint + its pending writes */
@@ -242,8 +242,8 @@ export class FirestoreSaver extends BaseCheckpointSaver {
             );
         }
 
-        const { typeTag: typeTag, payload: cpPayload } = this.serialize(checkpoint);
-        const { typeTag: metaType, payload: mdPayload } = this.serialize(metadata);
+        const { typeTag: typeTag, payload: cpPayload } = await this.serialize(checkpoint);
+        const { typeTag: metaType, payload: mdPayload } = await this.serialize(metadata);
         if (typeTag !== metaType) {
             throw new Error('Mismatched checkpoint & metadata types');
         }
@@ -284,10 +284,14 @@ export class FirestoreSaver extends BaseCheckpointSaver {
 
         const batch = this.firestore.batch();
 
-        writes.forEach(([channel, value], idx) => {
-            const { typeTag, payload } = this.serialize(value);
+        for (let idx = 0; idx < writes.length; idx++) {
+            const [channel, value] = writes[idx];
+            // await the serialize call
+            const { typeTag, payload } = await this.serialize(value);
+
             const docId = `${thread_id}_${checkpoint_ns}_${checkpoint_id}_${taskId}_${idx}`;
             const ref = this.checkpointWritesCollection.doc(docId);
+
             batch.set(
                 ref,
                 {
@@ -298,11 +302,11 @@ export class FirestoreSaver extends BaseCheckpointSaver {
                     idx,
                     channel,
                     type: typeTag,
-                    value: payload
+                    value: payload,
                 },
                 { merge: true }
             );
-        });
+        }
 
         try {
             await batch.commit();
@@ -310,4 +314,30 @@ export class FirestoreSaver extends BaseCheckpointSaver {
             throw new Error('Failed to save writes: ' + (err as Error).message);
         }
     }
+
+    /** Delete all checkpoints and pending writes for a thread */
+    async deleteThread(threadId: string): Promise<void> {
+        // Fetch and delete all checkpoint docs
+        const snap = await this.checkpointCollection
+            .where('thread_id', '==', threadId)
+            .get();
+
+        if (!snap.empty) {
+            const batch = this.firestore.batch();
+            snap.docs.forEach(doc => batch.delete(doc.ref));
+            await batch.commit();
+        }
+
+        // Fetch and delete all pending-write docs
+        const writesSnap = await this.checkpointWritesCollection
+            .where('thread_id', '==', threadId)
+            .get();
+
+        if (!writesSnap.empty) {
+            const batch2 = this.firestore.batch();
+            writesSnap.docs.forEach(doc => batch2.delete(doc.ref));
+            await batch2.commit();
+        }
+    }
+
 }

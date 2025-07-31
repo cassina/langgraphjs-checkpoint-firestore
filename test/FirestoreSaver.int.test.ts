@@ -256,3 +256,15 @@ it('should throw when checkpoint_ns contains a slash', async () => {
         saver.put(badConfig, mockCheckpoint, mockCheckpointMetadata)
     ).rejects.toThrow(/(Value for argument \"documentPath\")/i); // regex matches various possible error messages
 });
+
+
+// Test deleteThread()
+// should remove all documents with the given threadId from both collections
+//
+// should leave documents with other threadId values untouched
+//
+// should succeed when there are no matching docs in either collection
+//
+// should handle mixed presence (docs in only one of the two collections)
+//
+// should clean up large numbers of docs without exceeding batch limits

@@ -5,12 +5,12 @@ import {environmentFactory} from './utils/environmentFactory';
 
 // Import Test Subject
 import {FirestoreSaver} from '../src';
-import {clearFirestore} from './utils/clearFirestore';
+// import {clearFirestore} from './utils/clearFirestore';
 
 const { db, model } = environmentFactory();
 
 // Clear DB before each test
-beforeEach(async () => clearFirestore(db));
+// beforeEach(async () => clearFirestore(db));
 
 it('should persist conversation state with FirestoreSaver', async () => {
     // SUB
@@ -58,5 +58,7 @@ it('should persist conversation state with FirestoreSaver', async () => {
     // Assert that the state should be persisted
     const stateSnap = await app.getState(cfg);
     expect(stateSnap).toBeDefined();
+
+    // Assert that deletes all docs with that thread_id
 
 }, 15000);
