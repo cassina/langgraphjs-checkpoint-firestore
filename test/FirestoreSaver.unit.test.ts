@@ -71,12 +71,10 @@ describe('FirestoreSaver.put()', () => {
         channel_values: {},
         channel_versions: {},
         versions_seen: {},
-        pending_sends: [],
     };
     const mockMetadata: CheckpointMetadata = {
         source: 'input',
         step: 0,
-        writes: null,
         parents: {},
     };
 
@@ -437,3 +435,102 @@ describe('FirestoreSaver.list()', () => {
     });
 });
 
+describe('FirestoreSaver.deleteThread()', () => {
+    let mockFirestore: jest.Mocked<Firestore>;
+    let mockCheckpointCollection: any;
+    let mockWritesCollection: any;
+    let mockBatch1: { delete: jest.Mock; commit: jest.Mock };
+    let mockBatch2: { delete: jest.Mock; commit: jest.Mock };
+    let saver: FirestoreSaver;
+
+    beforeEach(() => {
+        mockBatch1 = { delete: jest.fn(), commit: jest.fn().mockResolvedValue(undefined) };
+        mockBatch2 = { delete: jest.fn(), commit: jest.fn().mockResolvedValue(undefined) };
+        mockCheckpointCollection = {
+            where: jest.fn().mockReturnThis(),
+            get: jest.fn().mockResolvedValue({ docs: [{ ref: 'c1' }, { ref: 'c2' }], empty: false })
+        };
+        mockWritesCollection = {
+            where: jest.fn().mockReturnThis(),
+            get: jest.fn().mockResolvedValue({ docs: [{ ref: 'w1' }], empty: false })
+        };
+
+        mockFirestore = {
+            collection: jest.fn()
+                .mockReturnValueOnce(mockCheckpointCollection)
+                .mockReturnValueOnce(mockWritesCollection),
+            batch: jest.fn()
+                .mockReturnValueOnce(mockBatch1)
+                .mockReturnValueOnce(mockBatch2),
+        } as unknown as jest.Mocked<Firestore>;
+
+        saver = new FirestoreSaver({ firestore: mockFirestore });
+    });
+
+    it('should query checkpointCollection where thread_id equals given threadId', async () => {
+        await saver.deleteThread('T1');
+        expect(mockCheckpointCollection.where).toHaveBeenCalledWith('thread_id', '==', 'T1');
+    });
+
+    it('should call batch.delete for each document returned by the checkpoint query', async () => {
+        await saver.deleteThread('T1');
+        expect(mockBatch1.delete).toHaveBeenCalledTimes(2);
+        expect(mockBatch1.delete).toHaveBeenNthCalledWith(1, 'c1');
+        expect(mockBatch1.delete).toHaveBeenNthCalledWith(2, 'c2');
+    });
+
+    it('should commit the checkpoint batch after deleting all checkpoint docs', async () => {
+        await saver.deleteThread('T1');
+        expect(mockBatch1.commit).toHaveBeenCalledTimes(1);
+    });
+
+    it('should query checkpointWritesCollection where thread_id equals given threadId', async () => {
+        await saver.deleteThread('T1');
+        expect(mockWritesCollection.where).toHaveBeenCalledWith('thread_id', '==', 'T1');
+    });
+
+    it('should call batch2.delete for each document returned by the checkpointWrites query', async () => {
+        await saver.deleteThread('T1');
+        expect(mockBatch2.delete).toHaveBeenCalledTimes(1);
+        expect(mockBatch2.delete).toHaveBeenCalledWith('w1');
+    });
+
+    it('should commit the checkpointWrites batch after deleting all checkpointWrites docs', async () => {
+        await saver.deleteThread('T1');
+        expect(mockBatch2.commit).toHaveBeenCalledTimes(1);
+    });
+
+    it('should do nothing if checkpointCollection.get() returns zero docs', async () => {
+        mockCheckpointCollection.get.mockResolvedValueOnce({ docs: [], empty: true });
+        await saver.deleteThread('T1');
+        expect(mockFirestore.batch).toHaveBeenCalledTimes(1);
+        expect(mockBatch1.delete).toHaveBeenCalledWith('w1');
+    });
+
+    it('should do nothing if checkpointWritesCollection.get() returns zero docs', async () => {
+        mockWritesCollection.get.mockResolvedValueOnce({ docs: [], empty: true });
+        await saver.deleteThread('T1');
+        expect(mockBatch2.delete).not.toHaveBeenCalled();
+        expect(mockBatch2.commit).not.toHaveBeenCalled();
+    });
+
+    it('should propagate an error if the initial checkpoint query throws', async () => {
+        mockCheckpointCollection.get.mockRejectedValueOnce(new Error('boom'));
+        await expect(saver.deleteThread('T1')).rejects.toThrow('boom');
+    });
+
+    it('should propagate an error if the checkpoint batch commit fails', async () => {
+        mockBatch1.commit.mockRejectedValueOnce(new Error('commitFail'));
+        await expect(saver.deleteThread('T1')).rejects.toThrow('commitFail');
+    });
+
+    it('should propagate an error if the checkpointWrites query throws', async () => {
+        mockWritesCollection.get.mockRejectedValueOnce(new Error('bad'));
+        await expect(saver.deleteThread('T1')).rejects.toThrow('bad');
+    });
+
+    it('should propagate an error if the checkpointWrites batch commit fails', async () => {
+        mockBatch2.commit.mockRejectedValueOnce(new Error('cwf'));
+        await expect(saver.deleteThread('T1')).rejects.toThrow('cwf');
+    });
+});

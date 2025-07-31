@@ -1,6 +1,6 @@
 # LangGraphJS Firestore Checkpoint
 
-[![npm version](https://img.shields.io/npm/v/@cassina/firestore-checkpoint-ts)](https://www.npmjs.com/package/@cassina/firestore-checkpoint-ts)
+[![npm version](https://img.shields.io/npm/v/@cassina/langgraphjs-checkpoint-firestore)](https://www.npmjs.com/package/@cassina/langgraphjs-checkpoint-firestore)
 [![CI](https://github.com/cassina/langgraphjs-checkpoint-firestore/actions/workflows/ci.yml/badge.svg)](https://github.com/cassina/langgraphjs-checkpoint-firestore/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE.md)
 
@@ -11,7 +11,7 @@
 ## Installation
 
 ```bash
-npm install @cassina/firestore-checkpoint-ts
+npm install @cassina/langgraphjs-checkpoint-firestore
 ```
 
 ## Usage
@@ -20,7 +20,7 @@ npm install @cassina/firestore-checkpoint-ts
    ```typescript
    import { initializeApp, cert } from 'firebase-admin/app';
    import { getFirestore } from 'firebase-admin/firestore';
-   import { FirestoreSaver } from '@cassina/firestore-checkpoint-ts';
+   import { FirestoreSaver } from '@cassina/langgraphjs-checkpoint-firestore';
 
    initializeApp({
      credential: cert(serviceAccountJson),
@@ -54,7 +54,19 @@ const saver = new FirestoreSaver({
 });
 ```
 
-The saver can be plugged directly into a LangGraph/LangChain workflow or used on its own to persist state between runs.
+The saver can be plugged directly into a LangGraph/LangChain workflow or used on its own to persist state between runs like so:
+
+```typescript
+const workflow = new StateGraph(StateAnnotation)
+        .addNode('agent', callModel)
+        .addEdge(START, 'agent');
+
+const app = workflow.compile({
+   checkpointer: saver,
+});
+```
+
+- Please see `test/FirestoreSaver.e2e.test.ts` for a full example.
 
 ## API Overview
 
