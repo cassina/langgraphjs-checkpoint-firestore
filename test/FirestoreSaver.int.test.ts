@@ -257,14 +257,83 @@ it('should throw when checkpoint_ns contains a slash', async () => {
     ).rejects.toThrow(/(Value for argument \"documentPath\")/i); // regex matches various possible error messages
 });
 
+test('deleteThread removes all docs for thread', async () => {
+    const otherId = 'other-thread';
 
-// Test deleteThread()
-// should remove all documents with the given threadId from both collections
-//
-// should leave documents with other threadId values untouched
-//
-// should succeed when there are no matching docs in either collection
-//
-// should handle mixed presence (docs in only one of the two collections)
-//
-// should clean up large numbers of docs without exceeding batch limits
+    // create documents for target thread
+    await saver.put({ configurable: { thread_id: mockThreadId } }, mockCheckpoint, mockCheckpointMetadata);
+    await saver.putWrites({ configurable: { thread_id: mockThreadId, checkpoint_ns: '', checkpoint_id: mockCheckpointId } }, [['chan', 1]], 'task');
+
+    // docs for another thread should remain untouched
+    await saver.put({ configurable: { thread_id: otherId } }, mockCheckpoint2, mockCheckpointMetadata);
+    await saver.putWrites({ configurable: { thread_id: otherId, checkpoint_ns: '', checkpoint_id: mockCheckpointId } }, [['chan', 2]], 'task2');
+
+    await saver.deleteThread(mockThreadId);
+
+    const cpSnap = await db.collection('checkpoints').where('thread_id', '==', mockThreadId).get();
+    expect(cpSnap.empty).toBe(true);
+    const writeSnap = await db.collection('checkpoint_writes').where('thread_id', '==', mockThreadId).get();
+    expect(writeSnap.empty).toBe(true);
+
+    const otherCpSnap = await db.collection('checkpoints').where('thread_id', '==', otherId).get();
+    expect(otherCpSnap.empty).toBe(false);
+    const otherWriteSnap = await db.collection('checkpoint_writes').where('thread_id', '==', otherId).get();
+    expect(otherWriteSnap.empty).toBe(false);
+});
+
+test('deleteThread is a no-op when no docs exist', async () => {
+    await expect(saver.deleteThread('missing-thread')).resolves.toBeUndefined();
+});
+
+test('deleteThread handles mixed presence', async () => {
+    // only checkpoints
+    await saver.put({ configurable: { thread_id: 'only-cp' } }, mockCheckpoint, mockCheckpointMetadata);
+    await saver.deleteThread('only-cp');
+    const cpSnap = await db.collection('checkpoints').where('thread_id', '==', 'only-cp').get();
+    expect(cpSnap.empty).toBe(true);
+
+    // only writes
+    await saver.put({ configurable: { thread_id: 'only-writes' } }, mockCheckpoint, mockCheckpointMetadata);
+    await saver.putWrites({ configurable: { thread_id: 'only-writes', checkpoint_ns: '', checkpoint_id: mockCheckpointId } }, [['c', 'v']], 't');
+    // manually remove checkpoints so only writes remain
+    const delSnap = await db.collection('checkpoints').where('thread_id', '==', 'only-writes').get();
+    for (const doc of delSnap.docs) {
+        await doc.ref.delete();
+    }
+
+    await saver.deleteThread('only-writes');
+    const writeSnap = await db.collection('checkpoint_writes').where('thread_id', '==', 'only-writes').get();
+    expect(writeSnap.empty).toBe(true);
+});
+
+test('deleteThread cleans up large numbers of docs', async () => {
+    const bigId = 'big-thread';
+    const total = 520; // exceed Firestore batch limit
+    const BATCH_SIZE = 500;
+    const checkpointsRef = db.collection('checkpoints');
+
+    // --- Bulk-insert setup via batched writes ---
+    let batch = db.batch();
+    for (let i = 0; i < total; i++) {
+        // Use a simple doc with just the thread_id field, since deleteThread only cares about that
+        const docRef = checkpointsRef.doc(`cp-${i}`);
+        batch.set(docRef, { thread_id: bigId });
+
+        // Once we hit 500 ops, commit and start a fresh batch
+        if ((i + 1) % BATCH_SIZE === 0) {
+            await batch.commit();
+            batch = db.batch();
+        }
+    }
+    // Commit any remaining writes (here: the last 20)
+    if (total % BATCH_SIZE !== 0) {
+        await batch.commit();
+    }
+
+    // --- Exercise deleteThread ---
+    await saver.deleteThread(bigId);
+
+    // --- Verify all were removed ---
+    const snap = await checkpointsRef.where('thread_id', '==', bigId).get();
+    expect(snap.empty).toBe(true);
+});
