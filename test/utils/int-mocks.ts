@@ -7,7 +7,6 @@ export const mockThreadId = 'thread-123';
 export const mockCheckpointMetadata: CheckpointMetadata = {
     source: 'update',
     step: -1,
-    writes: null,
     parents: { },
 };
 
@@ -18,7 +17,6 @@ export const mockCheckpoint: Checkpoint = {
     channel_values: { A: 1, B: 'foo' },
     channel_versions: { A: 1, B: 2 },
     versions_seen: { A: { A1: 1, B2: 2 } },
-    pending_sends: [],
 };
 
 export const mockCheckpoint2: Checkpoint = {
@@ -28,5 +26,4 @@ export const mockCheckpoint2: Checkpoint = {
     channel_values: { A: 1, B: 'foo' },
     channel_versions: { A: 1, B: 2 },
     versions_seen: { A: { A1: 1, B2: 2 } },
-    pending_sends: [],
 };
