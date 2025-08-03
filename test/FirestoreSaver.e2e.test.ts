@@ -5,12 +5,19 @@ import {environmentFactory} from './utils/environmentFactory';
 
 // Import Test Subject
 import {FirestoreSaver} from '../src';
-// import {clearFirestore} from './utils/clearFirestore';
+import {clearFirestore} from './utils/clearFirestore';
+import {ensureFirestoreEmulator} from './utils/ensureEmulator';
 
 const { db, model } = environmentFactory();
 
+beforeAll(async () => {
+    await ensureFirestoreEmulator();
+});
+
 // Clear DB before each test
-// beforeEach(async () => clearFirestore(db));
+beforeEach(async () => {
+    await clearFirestore(db);
+});
 
 /**
  * Fetch both the checkpoints and checkpoint_writes snapshots
