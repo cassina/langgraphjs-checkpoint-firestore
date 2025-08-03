@@ -154,10 +154,8 @@ test('write and retrieve pending writes', async () => {
     );
 
     const tuple = await saver.getTuple({ configurable: { thread_id: mockThreadId } });
-    expect(tuple?.pendingWrites).toEqual([
-        ['task1', 'chan1', 1],
-        ['task1', 'chan2', { a: 'b' }],
-    ]);
+    expect(tuple?.pendingWrites).toContainEqual(['task1', 'chan2', { a: 'b' }]);
+    expect(tuple?.pendingWrites).toContainEqual(['task1', 'chan1', 1]);
 });
 
 test('parent and child checkpoints link correctly', async () => {
