@@ -22,9 +22,7 @@ npm install @cassina/langgraphjs-checkpoint-firestore
    import { getFirestore } from 'firebase-admin/firestore';
    import { FirestoreSaver } from '@cassina/langgraphjs-checkpoint-firestore';
 
-   initializeApp({
-     credential: cert(serviceAccountJson),
-   });
+   initializeApp();
 
    const firestore = getFirestore();
    const saver = new FirestoreSaver({ firestore });
@@ -68,13 +66,15 @@ const app = workflow.compile({
 
 - Please see `test/FirestoreSaver.e2e.test.ts` for a full example.
 
-## API Overview
+| Method           | Purpose                                                              | Signature(key params only)                                                                               | Return                                                     |
+|------------------|----------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|------------------------------------------------------------|
+| **constructor**  | Create a saver bound to Firestore collections.                       | `new FirestoreSaver({ firestore, checkpointCollectionName? , checkpointWritesCollectionName? }, serde?)` | `FirestoreSaver`                                           |
+| **put**          | Persist a checkpoint and its metadata.                               | `put(config, checkpoint, metadata)`                                                                      | `Promise<RunnableConfig>` (points at the saved checkpoint) |
+| **getTuple**     | Fetch the latest (or specific) checkpoint plus its pending writes.   | `getTuple(config)`                                                                                       | `Promise<CheckpointTuple \| undefined>`                    |
+| **list**         | Stream checkpoints that match a config, optionally filtered/limited. | `list(config, options?)`                                                                                 | `AsyncGenerator<CheckpointTuple>`                          |
+| **putWrites**    | Record pending-write entries for a task.                             | `putWrites(config, writes, taskId)`                                                                      | `Promise<void>`                                            |
+| **deleteThread** | Remove every checkpoint and write belonging to a thread.             | `deleteThread(threadId)`                                                                                 | `Promise<void>`                                            |
 
-- **constructor(params, serializer?)** – create a new saver with a Firestore instance and optional collection names.
-- **`put(config, checkpoint, metadata)`** – store a checkpoint and metadata. Returns a new runnable config pointing to the saved checkpoint.
-- **`getTuple(config)`** – fetch the latest checkpoint for a thread or namespace along with any pending writes.
-- **`list(config, options)`** – asynchronously iterate through checkpoints matching the given configuration.
-- **`putWrites(config, writes, taskId)`** – record intermediate writes for a task.
 
 ## License
 
