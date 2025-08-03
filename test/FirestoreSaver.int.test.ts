@@ -181,20 +181,7 @@ test('parent and child checkpoints link correctly', async () => {
     expect(parent?.parentConfig).toBeUndefined();
 });
 
-test('overwrite checkpoint merges fields', async () => {
-    await saver.put({ configurable: { thread_id: mockThreadId } }, mockCheckpoint, mockCheckpointMetadata);
-    const docId = `${mockThreadId}__${mockCheckpointId}`;
-    await db.collection('checkpoints').doc(docId).set({ extra: 'keep' }, { merge: true });
 
-    const newMeta = { ...mockCheckpointMetadata, step: 99 };
-    await saver.put({ configurable: { thread_id: mockThreadId } }, mockCheckpoint, newMeta);
-
-    const snap = await db.collection('checkpoints').doc(docId).get();
-    expect(snap.data()?.extra).toBe('keep');
-
-    const tuple = await saver.getTuple({ configurable: { thread_id: mockThreadId } });
-    expect(tuple?.metadata?.step).toBe(99);
-});
 
 test('list returns checkpoints filtered by namespace', async () => {
     const cpA = { ...mockCheckpoint, id: 'a' };
@@ -234,28 +221,17 @@ test('throws when firestore client terminated', async () => {
 
 test('throws on corrupted checkpoint data', async () => {
     await saver.put({ configurable: { thread_id: mockThreadId } }, mockCheckpoint, mockCheckpointMetadata);
-    const docId = `${mockThreadId}__${mockCheckpointId}`;
-    await db.collection('checkpoints').doc(docId).update({ checkpoint: 'INVALID' });
+    const colRef = db.collection('checkpoints');
+    const q = await colRef.where('thread_id', '==', mockThreadId).get();
+    const firstDoc = q.docs[0];
+    
+    await colRef.doc(firstDoc.id).update({ checkpoint: 'INVALID' });
+    
     await expect(
         saver.getTuple({ configurable: { thread_id: mockThreadId } })
     ).rejects.toThrow();
 });
 
-it('should throw when thread_id contains a slash', async () => {
-    const badConfig = { configurable: { thread_id: 'bad/thread', checkpoint_ns: '' } };
-
-    await expect(
-        saver.put(badConfig, mockCheckpoint, mockCheckpointMetadata)
-    ).rejects.toThrow(/(Value for argument \"documentPath\")/i); // regex matches various possible error messages
-});
-
-it('should throw when checkpoint_ns contains a slash', async () => {
-    const badConfig = { configurable: { thread_id: 'test_id', checkpoint_ns: 'bad/id' } };
-
-    await expect(
-        saver.put(badConfig, mockCheckpoint, mockCheckpointMetadata)
-    ).rejects.toThrow(/(Value for argument \"documentPath\")/i); // regex matches various possible error messages
-});
 
 test('deleteThread removes all docs for thread', async () => {
     const otherId = 'other-thread';

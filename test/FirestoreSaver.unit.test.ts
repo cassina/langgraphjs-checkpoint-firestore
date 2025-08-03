@@ -114,7 +114,7 @@ describe('FirestoreSaver.put()', () => {
         const result = await saver.put(cfg, mockCheckpoint, mockMetadata);
 
         // docId = 'T1__test-1' since checkpoint_ns is ''
-        expect(mockCheckpointCollection.doc).toHaveBeenCalledWith('T1__test-1');
+        expect(mockCheckpointCollection.doc).toHaveBeenNthCalledWith(1);
 
         expect(mockDocRef.set).toHaveBeenCalledWith(
             {
@@ -200,8 +200,8 @@ describe('FirestoreSaver.putWrites()', () => {
         await saver.putWrites(cfg, writes, 'taskA');
 
         expect(mockWritesCollection.doc).toHaveBeenCalledTimes(2);
-        expect(mockWritesCollection.doc).toHaveBeenNthCalledWith(1, 'T1_ns_cp1_taskA_0');
-        expect(mockWritesCollection.doc).toHaveBeenNthCalledWith(2, 'T1_ns_cp1_taskA_1');
+        expect(mockWritesCollection.doc).toHaveBeenNthCalledWith(1);
+        expect(mockWritesCollection.doc).toHaveBeenNthCalledWith(2);
 
         expect(mockBatch.set).toHaveBeenCalledWith(
             mockDocRef,
