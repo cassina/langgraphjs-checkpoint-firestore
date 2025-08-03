@@ -248,7 +248,6 @@ export class FirestoreSaver extends BaseCheckpointSaver {
             throw new Error('Mismatched checkpoint & metadata types');
         }
 
-        // const docId = `${thread_id}_${checkpoint_ns}_${checkpoint_id}`;
         const docData = {
             thread_id,
             checkpoint_ns,
@@ -289,7 +288,6 @@ export class FirestoreSaver extends BaseCheckpointSaver {
             // await the serialize call
             const { typeTag, payload } = await this.serialize(value);
 
-            // const docId = `${thread_id}_${checkpoint_ns}_${checkpoint_id}_${taskId}_${idx}`;
             const ref = this.checkpointWritesCollection.doc();
 
             batch.set(
