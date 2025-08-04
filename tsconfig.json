@@ -1,10 +1,10 @@
 {
     "compilerOptions": {
         "target": "ES2022",
-        "module": "NodeNext",
-        "moduleResolution": "NodeNext",
+        "module": "ES2022",
+        "moduleResolution": "Bundler",
         "outDir": "./dist",
-        "rootDir": "./src",
+        "rootDir": ".",
         "strict": true,
         "esModuleInterop": true,
         "lib": ["ES2022", "ES2022.Object", "DOM"],
@@ -16,6 +16,7 @@
         "useDefineForClassFields": true,
         "strictPropertyInitialization": false,
         "sourceMap": true,
+        "skipLibCheck": true
     },
     "include": [
         "src/**/*"
